@@ -14,7 +14,7 @@ const App = () => {
     });
   
     socket.on('sentence', data => {
-      console.log('Received sentence:', data.sentence);
+      console.log(data.sentence);
       setPredictionText(data.sentence.toString());
     });
   
