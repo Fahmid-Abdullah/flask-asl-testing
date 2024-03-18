@@ -9,6 +9,7 @@ from flask_socketio import SocketIO, emit
 import time
 import mediapipe as mp
 import tensorflow as tf
+
 from keras.models import Sequential
 from keras.layers import LSTM, Dense
 
@@ -46,6 +47,15 @@ def extract_keypoints(results):
     #face = np.array([[res.x, res.y, res.z] for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(1404)
     return np.concatenate([pose, lh, rh])
 
+colors = [(245,117,16), (117,245,16), (16,117,245), (0,0,0)]
+def prob_viz(res, actions, input_frame, colors):
+    output_frame = input_frame.copy()
+    for num, prob in enumerate(res):
+        cv2.rectangle(output_frame, (0,60+num*40), (int(prob*100), 90+num*40), colors[num], -1)
+        cv2.putText(output_frame, actions[num], (0, 85+num*40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)
+        
+    return output_frame
+
 # 1. New detection variables
 timer = 0
 word = ""
@@ -71,6 +81,7 @@ def is_moving(start_keypoints, finish_keypoints):
     if max(d) > 0.15: return True
     return False
 
+
 def is_gesture(sequence_movement):
     true_count = 0
     false_count = 0
@@ -86,21 +97,17 @@ def is_gesture(sequence_movement):
 
     return False
 
-colors = [(245,117,16), (117,245,16), (16,117,245), (0,0,0)]
-def prob_viz(res, actions, input_frame, colors):
-    output_frame = input_frame.copy()
-    for num, prob in enumerate(res):
-        cv2.rectangle(output_frame, (0,60+num*40), (int(prob*100), 90+num*40), colors[num], -1)
-        cv2.putText(output_frame, actions[num], (0, 85+num*40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)
-        
-    return output_frame
+    #if all(value == False for value in sequence_movement[:5]) and all(
+    #        value == False for value in sequence_movement[-5:]) and sum(sequence_movement) > 2:
+    #    return False
+    #return True
 
 def predict(sequence):
     res = gesModel.predict(np.expand_dims(np.array(sequence), axis=0))
     return res
 
 # List of actions
-action_file = open("Vocab new.txt", "r")
+action_file = open("Vocab_final.txt", "r")
 actions = np.array(action_file.read().split("\n"))
 action_file.close()
 
@@ -117,7 +124,7 @@ gesModel.add(Dense(64, activation='relu'))
 gesModel.add(Dense(32, activation='relu'))
 gesModel.add(Dense(actions.shape[0], activation='softmax'))
 
-gesModel.load_weights('gestureModelNew.h5')
+gesModel.load_weights('gestureModelFinal.h5')
 aplhModel = model = tf.keras.models.load_model('letterModel.h5')
 
 def makePrediction():
@@ -162,8 +169,8 @@ def makePrediction():
                 stillTimer = 0
                 moveTimer += 1
 
-            #print(is_gesture(sequence_movement))
-            #print(sequence_movement)
+            print(is_gesture(sequence_movement))
+            print(sequence_movement)
             if len(sequence) == 30:
                 if moveTimer >= 10 and not startPre:
                     # npy_path = os.path.join("Test")
@@ -176,6 +183,7 @@ def makePrediction():
                     moveTimer = 0
                     startPre = False
                     res = predict(sequence)
+
                     sentence.append(actions[np.argmax(res)])
                     predictionMade = True
 
@@ -194,18 +202,17 @@ def makePrediction():
             # Show on cam
             if predictionMade:
                 if len(res[0]) == 24:
-                    cv2.putText(image, str(res[0][np.argmax(res)]) + "   Timer: " + str(timer),
+                    cv2.putText(image, alph[np.argmax(res)] + " " + str(res[0][np.argmax(res)]) + "   Timer: " + str(timer),
                                 (3, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
                     word = alph[np.argmax(res)]
                 else:
-                    cv2.putText(image, str(res[0][np.argmax(res)]) + "   Timer: " + str(timer),
+                    cv2.putText(image, actions[np.argmax(res)] + " " + str(res[0][np.argmax(res)]) + "   Timer: " + str(timer),
                                 (3, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
                     word = actions[np.argmax(res)]
                 socketio.emit('sentence', {'sentence': word})
-
-                #print(sentence[1:])
+                print(sentence[1:])
 
             yield (b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' + cv2.imencode('.jpg', image)[1].tobytes() +
